@@ -144,21 +144,144 @@ def _set_fullscreen(win_id: str) -> None:
         log.warning("No pude poner %s en fullscreen: %s", win_id, res.stderr.strip())
 
 
+# --- división de la pantalla (tile) ------------------------------------------
+
+# Cada layout es un rectángulo en FRACCIONES del área útil: x, y, ancho, alto.
+# Agregar uno nuevo ("top", "bottom", cuartos...) es una línea más acá.
+_TILES = {
+    "left":  (0.0, 0.0, 0.5, 1.0),
+    "right": (0.5, 0.0, 0.5, 1.0),
+}
+
+
+def _current_desktop() -> int:
+    """Índice (0-based) del workspace activo; 0 si no se puede determinar."""
+    res = _wmctrl("-d")
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "*" and parts[0].isdigit():
+            return int(parts[0])
+    return 0
+
+
+def _work_area(desktop: int) -> Optional[tuple[int, int, int, int]]:
+    """
+    Área ÚTIL del escritorio (x, y, ancho, alto), del campo `WA:` de `wmctrl -d`.
+
+    Es el rectángulo que el WM deja libre para las ventanas: si hay un panel que
+    reserva espacio, ya viene descontado. Por eso usamos esto y no `xrandr`, que
+    devuelve la resolución cruda y nos haría meter ventanas bajo el panel.
+    """
+    res = _wmctrl("-d")
+    if res.returncode != 0:
+        return None
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if not parts or not parts[0].isdigit() or int(parts[0]) != desktop:
+            continue
+        if "WA:" not in parts:
+            return None
+        i = parts.index("WA:")
+        try:
+            x, y = (int(v) for v in parts[i + 1].split(","))
+            w, h = (int(v) for v in parts[i + 2].split("x"))
+        except (IndexError, ValueError):
+            return None
+        return x, y, w, h
+    return None
+
+
+def _frame_extents(win_id: str) -> tuple[int, int, int, int]:
+    """
+    Grosor del marco de la ventana (izq, der, arriba, abajo) según EWMH.
+
+    Devuelve ceros si la ventana no publica la propiedad —las apps con
+    decoración del lado del cliente, como Brave, no lo hacen— o si `xprop` no
+    está instalado. Un marco desconocido se trata como marco nulo, no como error.
+    """
+    if shutil.which("xprop") is None:
+        return (0, 0, 0, 0)
+    res = subprocess.run(
+        ["xprop", "-id", win_id, "_NET_FRAME_EXTENTS"],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, check=False,
+    )
+    if res.returncode != 0 or "=" not in res.stdout:
+        return (0, 0, 0, 0)
+    try:
+        vals = [int(v.strip()) for v in res.stdout.split("=", 1)[1].split(",")]
+    except ValueError:
+        return (0, 0, 0, 0)
+    return (vals[0], vals[1], vals[2], vals[3]) if len(vals) >= 4 else (0, 0, 0, 0)
+
+
+def _unmaximize(win_id: str) -> None:
+    """Una ventana maximizada ignora los pedidos de geometría; hay que soltarla."""
+    _wmctrl("-i", "-r", win_id, "-b", "remove,maximized_vert,maximized_horz")
+
+
+def _tile_window(win_id: str, tile: str, desktop: int) -> None:
+    """Ubica la ventana en una fracción del área útil (mitad izquierda/derecha)."""
+    frac = _TILES.get(str(tile).strip().lower())
+    if frac is None:
+        log.warning("tile=%r desconocido. Valores válidos: %s", tile, ", ".join(_TILES))
+        return
+
+    area = _work_area(desktop)
+    if area is None:
+        log.warning("No pude leer el área útil del escritorio %d; salteo el tile.", desktop)
+        return
+
+    ax, ay, aw, ah = area
+    fx, fy, fw, fh = frac
+    x = ax + round(aw * fx)
+    y = ay + round(ah * fy)
+    w = round(aw * fw)
+    h = round(ah * fh)
+
+    _unmaximize(win_id)
+
+    # `wmctrl -e` dimensiona el ÁREA DE CLIENTE, sin contar el marco: si no lo
+    # descontamos, una ventana con barra de título de 32px termina ocupando
+    # 32px más de alto que el rectángulo pedido y se desborda.
+    left, right, top, bottom = _frame_extents(win_id)
+    w = max(1, w - left - right)
+    h = max(1, h - top - bottom)
+
+    res = _wmctrl("-i", "-r", win_id, "-e", f"0,{x},{y},{w},{h}")
+    if res.returncode != 0:
+        log.warning("No pude ubicar %s en %r: %s", win_id, tile, res.stderr.strip())
+    else:
+        log.info("Ventana %s -> tile %s (%dx%d en %d,%d)", win_id, tile, w, h, x, y)
+
+
 def _place_window(win_id: str, action: dict) -> None:
-    """Aplica workspace y/o fullscreen a una ventana ya identificada."""
+    """Aplica workspace y, según la acción, tile o fullscreen."""
     ws = action.get("workspace")
     if isinstance(ws, int):
         _move_to_workspace(win_id, ws)
-    if action.get("fullscreen"):
+
+    tile = action.get("tile")
+    if tile and action.get("fullscreen"):
+        log.warning("'tile' y 'fullscreen' son incompatibles; uso 'tile' e ignoro 'fullscreen'.")
+
+    if tile:
+        # El tile se calcula contra el escritorio donde va a quedar la ventana.
+        desktop = (ws - 1) if isinstance(ws, int) and ws >= 1 else _current_desktop()
+        _tile_window(win_id, tile, desktop)
+    elif action.get("fullscreen"):
         _set_fullscreen(win_id)
 
 
 def _place_new_window(before: set[str], action: dict, default_match: Optional[str]) -> None:
     """
-    Para run/open_url: si la acción pide workspace o fullscreen, espera la ventana
-    nueva y se la aplica. Si no pide nada de ventana, no espera (más rápido).
+    Para run/open_url: si la acción pide workspace, tile o fullscreen, espera la
+    ventana nueva y se la aplica. Si no pide nada de ventana, no espera (más rápido).
     """
-    wants_placement = isinstance(action.get("workspace"), int) or action.get("fullscreen")
+    wants_placement = (
+        isinstance(action.get("workspace"), int)
+        or action.get("fullscreen")
+        or action.get("tile")
+    )
     if not wants_placement:
         return
     if not _have_wmctrl():

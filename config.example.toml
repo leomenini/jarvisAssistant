@@ -40,7 +40,8 @@ run_once    = true     # true = un doble aplauso, corre todo y cierra el detecto
 #                                por defecto del sistema)
 #     new_window   = true       (opcional; ventana nueva vs. pestaña)
 #     workspace    = 1          (opcional; a qué espacio de trabajo mandarla)
-#     fullscreen   = false      (opcional)
+#     tile         = "left"     (opcional; "left" o "right" = mitad de pantalla)
+#     fullscreen   = false      (opcional; incompatible con tile)
 #
 # type = "run"       -> lanza cualquier programa
 #     cmd          = ["nombre-ejecutable"]  (obligatorio; programa + argumentos)
@@ -99,27 +100,28 @@ gui = true
 workspace = 3
 keep_on_exit = true
 
-# 1) Una URL en el navegador, en el workspace 1.
+# 1) Una URL en el navegador, en la MITAD IZQUIERDA del workspace 1.
 [[actions]]
 type = "open_url"
 url = "https://example.com"
 new_window = true
 workspace = 1
-fullscreen = false
+tile = "left"
 
 # 2) Esperar un toque para que el navegador termine de abrir.
 [[actions]]
 type = "wait"
 seconds = 1.0
 
-# 3) Una app de escritorio en el workspace 2.
-#    Reemplazá "xterm" por tu app y ajustá `match` a su WM_CLASS (`wmctrl -lx`).
+# 3) Otra app en la MITAD DERECHA del MISMO workspace: así quedan las dos a la
+#    vista, una a cada lado. Reemplazá "xterm" por tu app y ajustá `match` a su
+#    WM_CLASS (`wmctrl -lx`).
 [[actions]]
 type = "run"
 cmd = ["xterm"]
 match = "xterm"
-workspace = 2
-fullscreen = false
+workspace = 1
+tile = "right"
 
 # 4) Mensaje de bienvenida. Espera a que la música lleve 30 s sonando (o sigue
 #    de largo si abrir las apps ya tardó más) y habla POR ENCIMA de la música.

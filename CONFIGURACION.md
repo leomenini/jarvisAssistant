@@ -137,7 +137,80 @@ tenías corriendo.
 
 ---
 
-## 5. Timing: por qué a veces la ventana no se mueve
+## 5. Dos apps por workspace (`tile`)
+
+`workspace` decide **en qué escritorio** cae una ventana; `tile` decide **qué
+parte de la pantalla** ocupa. Poniendo dos acciones en el mismo workspace, una
+`"left"` y otra `"right"`, quedan las dos a la vista:
+
+```toml
+[[actions]]
+type = "open_url"
+url = "https://example.com"
+new_window = true
+workspace = 1
+tile = "left"
+
+[[actions]]
+type = "wait"
+seconds = 1.0
+
+[[actions]]
+type = "run"
+cmd = ["spotify"]
+match = "spotify"
+workspace = 1
+tile = "right"
+```
+
+```
+┌──────────┬──────────┐
+│          │          │
+│  "left"  │ "right"  │      workspace 1
+│          │          │
+└──────────┴──────────┘
+```
+
+Detalles:
+
+- **`tile` y `fullscreen` son incompatibles.** Si ponés los dos en la misma
+  acción gana `tile` y se avisa por log.
+- **Las mitades se calculan sobre el área útil**, no sobre la resolución: si tu
+  panel de Cinnamon reserva espacio, queda descontado y las ventanas no se meten
+  abajo. Para ver ese área: `wmctrl -d`, campo `WA:`.
+- **El marco de la ventana se descuenta.** Una app con barra de título ocuparía
+  de más si no; se mide con `xprop` (paquete `x11-utils`).
+- Si tu panel está en "ocultar inteligente" no reserva espacio, así que el área
+  útil es la pantalla completa y el panel va a taparte una franja cuando
+  aparezca. Es esperable: el WM dice que ese espacio es usable.
+
+Agregar más posiciones (arriba/abajo, cuartos) es una línea en el diccionario
+`_TILES` de `actions.py`; hoy están solo `left` y `right`.
+
+### Por qué a veces queda un margen
+
+Dos casos donde la ventana *parece* mal ubicada pero la geometría es correcta.
+Antes de tocar nada, medí lo que el WM dice de verdad:
+
+```bash
+xwininfo -id $(wmctrl -lx | grep -i TU-APP | awk '{print $1}')
+```
+
+- **La app dibuja su propio margen.** Chromium (Brave) pinta sombra y esquinas
+  redondeadas *adentro* de su ventana: `xwininfo` reporta los 960x1080 pedidos,
+  pero visualmente el contenido arranca unos píxeles más adentro por los cuatro
+  lados. La ventana ocupa el espacio completo; es la app la que no pinta hasta
+  el borde. No se corrige por geometría.
+
+- **Las terminales redimensionan por celdas.** gnome-terminal declara
+  `resize increment: 10 by 22`, así que el alto se redondea hacia abajo al
+  múltiplo de 22 más cercano y puede quedar hasta 21 px de espacio abajo. Es una
+  restricción que la app impone vía `WM_NORMAL_HINTS` y el WM respeta. Para ver
+  los incrementos de una app: `xprop -id <id> WM_NORMAL_HINTS`.
+
+En ambos casos el `tile` hizo lo correcto y no hay nada que ajustar en el config.
+
+## 6. Timing: por qué a veces la ventana no se mueve
 
 Una app recién lanzada tarda en mapear su ventana. El programa saca una foto de
 las ventanas existentes, lanza la app y **espera hasta 15 s** a que aparezca una
@@ -157,7 +230,7 @@ punto 2 y verificá con `wmctrl -lx` **con la app abierta**.
 
 ---
 
-## 6. Un ejemplo completo
+## 7. Un ejemplo completo
 
 Navegador en el workspace 1, editor en el 2, música en el 3:
 
@@ -194,7 +267,7 @@ de sumar el siguiente. Depurar cinco acciones nuevas juntas es mucho peor.
 
 ---
 
-## 7. Si nada de esto funciona
+## 8. Si nada de esto funciona
 
 - **`wmctrl: command not found`** → `sudo apt install wmctrl`.
 - **`echo $XDG_SESSION_TYPE` dice `wayland`** → `wmctrl` no funciona ahí. Los

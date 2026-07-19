@@ -29,7 +29,7 @@ hacer nada.
 ### 1. Instalá lo que hace falta
 
 ```bash
-sudo apt install python3-venv wmctrl ffmpeg vlc
+sudo apt install python3-venv wmctrl ffmpeg vlc x11-utils
 ```
 
 `wmctrl` mueve ventanas, `ffmpeg` y `vlc` reproducen audio. Sin `wmctrl` el
@@ -154,7 +154,11 @@ después sin tocar nada.
 
 Qué aporta cada paquete de sistema:
 
-- **`wmctrl`** — mueve ventanas entre workspaces y las pone en fullscreen.
+- **`wmctrl`** — mueve ventanas entre workspaces, las divide en mitades y las
+  pone en fullscreen.
+- **`x11-utils`** — aporta `xprop`, con el que se mide el marco de cada ventana
+  para que el `tile` no se desborde. Sin él las mitades quedan unos píxeles
+  grandes, pero nada se rompe.
 - **`ffmpeg`** (su `ffplay`) — reproduce el mensaje de bienvenida sin ventana.
 - **`vlc`** — toca la música de fondo con una ventana que podés cerrar a mano.
 - **`libportaudio2`** — lo usa `sounddevice` para leer el micrófono. En Mint ya
@@ -215,9 +219,9 @@ Tipos de acción:
 
 | `type`       | Parámetros                                                                  |
 | ------------ | --------------------------------------------------------------------------- |
-| `open_url`   | `url` (oblig.), `browser`, `new_window`, `workspace`, `fullscreen`          |
-| `run`        | `cmd = [...]` (oblig.), `match`, `workspace`, `fullscreen`                   |
-| `activate`   | `match` (oblig.), `launch = [...]`, `workspace`, `fullscreen`                |
+| `open_url`   | `url` (oblig.), `browser`, `new_window`, `workspace`, `tile`, `fullscreen`  |
+| `run`        | `cmd = [...]` (oblig.), `match`, `workspace`, `tile`, `fullscreen`           |
+| `activate`   | `match` (oblig.), `launch = [...]`, `workspace`, `tile`, `fullscreen`        |
 | `wait`       | `seconds`                                                                    |
 | `music`      | `folder`, `volume` (0-100), `include`, `gui`, `workspace`, `keep_on_exit`    |
 | `welcome`    | `folder`, `volume`, `include`, `after_s`, `stop_music`                       |
@@ -328,7 +332,7 @@ docker build -f docker/Dockerfile -t jarvis-verify .
 docker run --rm jarvis-verify
 ```
 
-Corre 36 verificaciones sobre el código real, sin tocar tu sesión:
+Corre 46 verificaciones sobre el código real, sin tocar tu sesión:
 
 | Qué verifica | Cómo |
 | ------------ | ---- |
@@ -340,6 +344,7 @@ Corre 36 verificaciones sobre el código real, sin tocar tu sesión:
 | El audio suena | Genera un WAV y lo reproduce contra un sink nulo de PulseAudio |
 | **El detector detecta** | Sintetiza un doble aplauso, lo reproduce en el sink nulo y lo captura desde su `.monitor` con el detector real |
 | **Los scripts corren de verdad** | Ejecuta `jarvis.py` como proceso: aplauso → acciones → salida limpia, con exit code 0. También `diagnostico.py` |
+| **El `tile` divide bien** | Abre dos ventanas en mitades opuestas y mide la geometría real con `xwininfo`: que no se solapen ni se desborden del área útil, marco incluido |
 
 La última merece una nota: el `.monitor` de un sink nulo de PulseAudio es una
 **fuente de captura**, así que lo que se reproduce ahí se puede grabar. Eso

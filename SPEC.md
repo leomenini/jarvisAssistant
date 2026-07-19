@@ -179,6 +179,40 @@ continúa con la acción siguiente. **La espera solo ocurre si la acción pide
 El `match` compara contra la WM_CLASS y el título, sin distinguir mayúsculas. Se
 recomienda la clase: el título cambia con el contenido.
 
+### 4.3 División de la pantalla (`tile`)
+
+El parámetro `tile` ubica la ventana en una fracción del escritorio: hoy
+`"left"` y `"right"` (mitades verticales). Permite dos apps por workspace, ambas
+visibles. Es excluyente con `fullscreen`; si vienen los dos, gana `tile`.
+
+Los rectángulos se definen en **fracciones** (`_TILES`), no en píxeles, así que
+sumar layouts no toca la lógica de aplicación.
+
+Aplicar geometría en X11 tiene tres condiciones que hay que resolver juntas:
+
+| Condición | Por qué | Solución |
+| --------- | ------- | -------- |
+| El área útil ≠ la resolución | Un panel que reserva espacio reduce lo usable | Se lee el campo `WA:` de `wmctrl -d`, no `xrandr` |
+| `wmctrl -e` dimensiona el área de cliente | Una ventana con barra de título de 32 px ocuparía 32 px de más y se desbordaría | Se leen los `_NET_FRAME_EXTENTS` con `xprop` y se descuentan |
+| Una ventana maximizada ignora la geometría | El estado maximizado tiene prioridad | Se quita `maximized_vert`/`maximized_horz` antes de posicionar |
+
+No todas las apps publican `_NET_FRAME_EXTENTS`: las que usan decoración del
+lado del cliente (Brave, por ejemplo) no lo hacen. La ausencia se trata como
+marco nulo, no como error, y `xprop` faltante degrada igual — las mitades quedan
+unos píxeles grandes pero nada falla.
+
+**Límite del mecanismo:** la geometría se pide, no se impone. Dos casos donde el
+resultado visible difiere del rectángulo solicitado, ambos del lado de la app:
+
+- Las que dibujan sombra o esquinas redondeadas dentro de su propia ventana
+  (Chromium) ocupan el rectángulo completo pero no pintan hasta el borde.
+- Las que declaran incrementos de redimensionado en `WM_NORMAL_HINTS` —las
+  terminales, por celdas de carácter— se redondean hacia abajo: gnome-terminal
+  usa 22 px de alto por fila, así que puede quedar hasta 21 px sin ocupar.
+
+Ninguno se corrige desde el gestor de ventanas; son decisiones de renderizado de
+cada aplicación.
+
 ---
 
 ## 5. Configuración
@@ -203,9 +237,9 @@ parámetros.
 
 | `type` | Función | Parámetros |
 | ------ | ------- | ---------- |
-| `run` | Lanza un programa. Escape hatch general. | `cmd` (req.), `match`, `workspace`, `fullscreen` |
-| `open_url` | Abre una URL en un navegador. | `url` (req.), `browser`, `new_window`, `workspace`, `fullscreen` |
-| `activate` | Enfoca una ventana existente; la lanza si no está. | `match` (req.), `launch`, `workspace`, `fullscreen` |
+| `run` | Lanza un programa. Escape hatch general. | `cmd` (req.), `match`, `workspace`, `tile`, `fullscreen` |
+| `open_url` | Abre una URL en un navegador. | `url` (req.), `browser`, `new_window`, `workspace`, `tile`, `fullscreen` |
+| `activate` | Enfoca una ventana existente; la lanza si no está. | `match` (req.), `launch`, `workspace`, `tile`, `fullscreen` |
 | `wait` | Pausa entre acciones. | `seconds` |
 | `music` | Música de fondo, archivo al azar de una carpeta. | `folder`, `volume`, `include`, `gui`, `workspace`, `keep_on_exit` |
 | `welcome` | Mensaje que bloquea hasta terminar. | `folder`, `volume`, `include`, `after_s`, `stop_music` |
@@ -285,5 +319,9 @@ Decisiones explícitas de **no** implementar, con su motivo:
 - **GUI de configuración.** El TOML comentado cumple la función.
 - **Soporte de Wayland.** Requeriría un backend distinto al de `wmctrl` (por
   ejemplo protocolos específicos del compositor), sin equivalente portable.
-- **Múltiples monitores.** El diseño reparte por workspaces. Distribuir por
-  pantallas requeriría geometría vía `xrandr`.
+- **Múltiples monitores.** El diseño reparte por workspaces y, dentro de cada
+  uno, por mitades (§4.3). Distribuir por pantallas físicas es otro problema:
+  requeriría `xrandr` para obtener la geometría de cada salida.
+- **Layouts más allá de mitades.** `_TILES` en `actions.py` define los
+  rectángulos en fracciones; agregar cuartos o divisiones horizontales es una
+  entrada más en ese diccionario.

@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.WARNING, format="      %(levelname)s %(message
 
 _failures: list[str] = []
 _step = 0
-TOTAL = 8
+TOTAL = 9
 
 
 def step(title: str) -> None:
@@ -471,12 +471,93 @@ def verify_scripts_end_to_end() -> None:
     check("umbral=" in diag.stdout, "diagnostico.py calibró e informó el umbral")
 
 
+# --- 9. división de la pantalla ----------------------------------------------
+
+def _geometria(win_id: str) -> tuple[int, int, int, int]:
+    """
+    Rectángulo REAL que ocupa la ventana incluyendo su marco, medido con
+    xwininfo. xwininfo reporta el área de cliente, así que le sumamos los
+    extents: es el rectángulo que el usuario ve, y es lo que hay que verificar.
+    """
+    import actions
+
+    res = subprocess.run(["xwininfo", "-id", win_id],
+                         capture_output=True, text=True, check=False)
+    datos = {}
+    for linea in res.stdout.splitlines():
+        if ":" in linea:
+            k, _, v = linea.strip().partition(":")
+            datos[k.strip()] = v.strip()
+
+    cx = int(datos["Absolute upper-left X"])
+    cy = int(datos["Absolute upper-left Y"])
+    cw = int(datos["Width"])
+    ch = int(datos["Height"])
+    left, right, top, bottom = actions._frame_extents(win_id)
+    return (cx - left, cy - top, cw + left + right, ch + top + bottom)
+
+
+def verify_tiling() -> None:
+    step("Tile: dos ventanas en mitades opuestas del mismo workspace")
+
+    import actions
+
+    area = actions._work_area(0)
+    if not check(area is not None, f"área útil legible desde wmctrl -d: {area}"):
+        return
+    ax, ay, aw, ah = area
+
+    # `-e sleep` en vez de una shell: el prompt de bash reescribe el título con
+    # user@host y perderíamos la etiqueta con la que identificamos cada ventana.
+    actions.run_actions([
+        {"type": "run", "cmd": ["xterm", "-title", "izq", "-e", "sleep", "300"],
+         "match": "izq", "workspace": 1, "tile": "left"},
+        {"type": "run", "cmd": ["xterm", "-title", "der", "-e", "sleep", "300"],
+         "match": "der", "workspace": 1, "tile": "right"},
+    ])
+    time.sleep(1.0)
+
+    ventanas = {w["title"]: w["id"] for w in _windows() if w["title"] in ("izq", "der")}
+    if not check(len(ventanas) == 2, f"aparecieron las dos ventanas: {list(ventanas)}"):
+        return
+
+    izq = _geometria(ventanas["izq"])
+    der = _geometria(ventanas["der"])
+    tol = 6   # el WM puede ajustar por incrementos de celda (xterm redimensiona por caracteres)
+
+    check(abs(izq[0] - ax) <= tol, f"la izquierda arranca en x={izq[0]} (esperado {ax})")
+    check(abs(der[0] - (ax + aw // 2)) <= tol,
+          f"la derecha arranca en x={der[0]} (esperado {ax + aw // 2})")
+    check(abs(izq[2] - aw // 2) <= tol, f"la izquierda mide {izq[2]}px de ancho (esperado {aw // 2})")
+    check(abs(der[2] - aw // 2) <= tol, f"la derecha mide {der[2]}px de ancho (esperado {aw // 2})")
+
+    # Lo que de verdad importa: que no se pisen ni se salgan de la pantalla.
+    check(izq[0] + izq[2] <= der[0] + tol, "no se solapan")
+    check(izq[1] >= ay - tol and izq[1] + izq[3] <= ay + ah + tol,
+          "la izquierda no se desborda del área útil (marco incluido)")
+    check(der[0] + der[2] <= ax + aw + tol,
+          "la derecha no se desborda por el costado")
+
+    subprocess.run(["pkill", "-f", "xterm"], check=False)
+
+    # Un nombre inválido advierte y no rompe la secuencia.
+    try:
+        actions.run_actions([
+            {"type": "run", "cmd": ["xterm"], "match": "xterm",
+             "workspace": 1, "tile": "diagonal"},
+        ])
+        check(True, "un tile desconocido advierte y sigue")
+    except Exception as e:  # noqa: BLE001
+        check(False, f"un tile inválido tumbó la secuencia: {e}")
+    subprocess.run(["pkill", "-f", "xterm"], check=False)
+
+
 def main() -> int:
     print(f"Jarvis — verificación en entorno limpio (DISPLAY={os.environ.get('DISPLAY')})\n")
 
     for fn in (verify_dependencies, verify_fresh_clone, verify_template,
                verify_window_placement, verify_degradation, verify_audio,
-               verify_detector, verify_scripts_end_to_end):
+               verify_detector, verify_scripts_end_to_end, verify_tiling):
         try:
             fn()
         except Exception as e:  # noqa: BLE001
