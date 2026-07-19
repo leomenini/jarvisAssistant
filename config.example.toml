@@ -1,0 +1,134 @@
+# =============================================================================
+# Config de Jarvis — PLANTILLA.
+#
+#   cp config.example.toml config.toml   # y editá config.toml, no este archivo
+#
+# `config.toml` está en el .gitignore: es TUYO, no se sube al repo. Este ejemplo
+# sí se versiona, así que cualquiera que clone el proyecto arranca desde acá.
+#
+# Al detectar un doble aplauso se corren las acciones [[actions]] EN ORDEN.
+# Guía completa de workspaces y ventanas: CONFIGURACION.md
+# =============================================================================
+
+[detector]
+# Perillas del detector de aplausos. Todas son opcionales (si borrás una, se usa
+# el valor por defecto). Las más útiles para tunear:
+spike_ratio = 7.0      # subí si hay falsos disparos; bajá si no detecta los aplausos
+cooldown_s  = 0.45     # tiempo mínimo entre dos disparos (antirrebote)
+min_gap_s   = 0.05     # separación mínima entre los dos aplausos
+max_gap_s   = 0.35     # separación máxima entre los dos aplausos
+min_rms     = 0.012    # piso de volumen absoluto (subilo en salas muy silenciosas)
+sample_rate = 44100    # probá 48000 si tu placa no anda con 44100
+calibrate_s = 1.0      # al arrancar mide el ruido de TU sala este tiempo y ajusta
+                       # el umbral (quedate en silencio ese segundo). Sin esto el
+                       # umbral queda pegado a min_rms y dispara solo.
+run_once    = true     # true = un doble aplauso, corre todo y cierra el detector
+                       # (las apps quedan abiertas). false = escucha para siempre.
+
+# Forzar un micrófono concreto (opcional). Puede ser un índice (número) o parte
+# del nombre del dispositivo. Si lo dejás comentado, se autodetecta.
+# Para ver la lista:  python -c "import sounddevice as sd; print(sd.query_devices())"
+# input_device = "USB"
+
+
+# -----------------------------------------------------------------------------
+# ACCIONES. Cada bloque [[actions]] es un paso. Editá / borrá / reordená libre.
+#
+# type = "open_url"  -> abre una URL en el navegador
+#     url          (obligatorio)
+#     browser      = "brave"    (opcional; si no lo encuentra usa el navegador
+#                                por defecto del sistema)
+#     new_window   = true       (opcional; ventana nueva vs. pestaña)
+#     workspace    = 1          (opcional; a qué espacio de trabajo mandarla)
+#     fullscreen   = false      (opcional)
+#
+# type = "run"       -> lanza cualquier programa
+#     cmd          = ["nombre-ejecutable"]  (obligatorio; programa + argumentos)
+#     match        = "clase"                (opcional; ventana a esperar/mover)
+#     workspace / fullscreen                 (opcionales, igual que arriba)
+#
+# type = "activate"  -> enfoca una ventana ya abierta (o la lanza si no está)
+#     match        = "clase"                (obligatorio; parte de clase/título)
+#     launch       = ["nombre-ejecutable"]  (opcional; con qué abrirla si no existe)
+#     workspace / fullscreen                 (opcionales)
+#
+# type = "wait"      -> pausa entre acciones
+#     seconds      = 1.0
+#
+# type = "music"     -> arranca música de fondo (sigue sonando mientras corren
+#                       las acciones siguientes)
+#     folder       = "assets/music"  (opcional; elige UN archivo al azar)
+#     volume       = 35              (opcional; 0 a 100)
+#     include      = "texto"         (opcional; solo archivos con ese texto en
+#                                     el nombre)
+#     gui          = true            (opcional; true = abre VLC con ventana, lo
+#                                     podés pausar o cerrar a mano. false = suena
+#                                     sin ventana, no se puede cerrar)
+#     workspace    = 3               (opcional; a qué workspace mandar el VLC)
+#     keep_on_exit = true            (opcional; true = la canción sigue hasta el
+#                                     final aunque Jarvis ya se haya cerrado)
+#
+# type = "welcome"   -> reproduce un mensaje de bienvenida y ESPERA a que termine
+#     folder       = "assets/welcome"  (opcional; elige uno al azar)
+#     after_s      = 12                (opcional; espera a que la música lleve
+#                                       ese tiempo sonando, contado desde que
+#                                       arrancó — si las apps ya tardaron más,
+#                                       no espera de más)
+#     volume       = 100               (opcional)
+#     include      = "texto"           (opcional; filtra por nombre de archivo,
+#                                       sirve para fijar el idioma)
+#     stop_music   = true              (opcional; corta la música antes de hablar)
+#
+# type = "stop_music" -> corta la música de fondo
+# -----------------------------------------------------------------------------
+
+# --- EJEMPLO DE FLUJO --------------------------------------------------------
+# Lo de abajo es una demo de las piezas, no una receta: cambiá las URLs, los
+# comandos y los workspaces por lo tuyo. Para saber qué poner en `match` y
+# cuántos workspaces tenés, leé CONFIGURACION.md.
+# -----------------------------------------------------------------------------
+
+# 0) Música de fondo apenas suenan los dos aplausos. VLC se va a un workspace
+#    aparte para no tapar nada; sigue sonando durante y después del mensaje.
+#    Necesita al menos un audio en assets/music/ (no vienen incluidos).
+[[actions]]
+type = "music"
+folder = "assets/music"
+volume = 35
+gui = true
+workspace = 3
+keep_on_exit = true
+
+# 1) Una URL en el navegador, en el workspace 1.
+[[actions]]
+type = "open_url"
+url = "https://example.com"
+new_window = true
+workspace = 1
+fullscreen = false
+
+# 2) Esperar un toque para que el navegador termine de abrir.
+[[actions]]
+type = "wait"
+seconds = 1.0
+
+# 3) Una app de escritorio en el workspace 2.
+#    Reemplazá "xterm" por tu app y ajustá `match` a su WM_CLASS (`wmctrl -lx`).
+[[actions]]
+type = "run"
+cmd = ["xterm"]
+match = "xterm"
+workspace = 2
+fullscreen = false
+
+# 4) Mensaje de bienvenida. Espera a que la música lleve 30 s sonando (o sigue
+#    de largo si abrir las apps ya tardó más) y habla POR ENCIMA de la música.
+#    Necesita al menos un audio en assets/welcome/.
+#    `include` fija el idioma si nombrás tus archivos con un prefijo constante.
+[[actions]]
+type = "welcome"
+folder = "assets/welcome"
+after_s = 30
+volume = 100
+stop_music = false
+# include = "Bienvenido"

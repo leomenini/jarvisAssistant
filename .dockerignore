@@ -1,0 +1,11 @@
+# El contenedor debe ver EXACTAMENTE lo que ve alguien que clona el repo:
+# sin entorno virtual, sin config personal, sin assets de audio.
+.venv/
+__pycache__/
+*.pyc
+config.toml
+assets/music/*
+assets/welcome/*
+!assets/music/README.md
+!assets/welcome/README.md
+.git/

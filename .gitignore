@@ -1,0 +1,16 @@
+.env
+.cache/
+.venv/
+__pycache__/
+*.pyc
+
+# Config personal: rutas, apps y URLs propias. Se versiona la plantilla
+# (config.example.toml), no la copia de cada uno.
+config.toml
+
+# Audio: archivos pesados y con derechos de autor de terceros. Se versiona la
+# estructura de carpetas (los README) pero no el contenido.
+assets/music/*
+assets/welcome/*
+!assets/music/README.md
+!assets/welcome/README.md
